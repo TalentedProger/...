@@ -55,6 +55,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
+  // Development-only auth endpoint for testing
+  app.post('/api/auth/dev', async (req, res) => {
+    // Only allow in development mode
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ error: 'Dev endpoint not available in production' });
+    }
+
+    try {
+      // Generate or get a test user
+      let user = await storage.getUserByTgId(BigInt(999999));
+      
+      if (!user) {
+        user = await storage.createUser({
+          tgId: BigInt(999999),
+          username: null,
+          anonName: generateAnonName(),
+          status: 'approved',
+        });
+      } else if (user.status !== 'approved') {
+        // Ensure dev user is always approved
+        user = await storage.updateUserStatus(user.id, 'approved');
+      }
+
+      res.json({
+        user: {
+          id: user.id,
+          anonName: user.anonName,
+          status: user.status,
+          createdAt: user.createdAt,
+        },
+        status: user.status
+      });
+
+    } catch (error) {
+      console.error('Dev auth error:', error);
+      res.status(500).json({ error: 'Dev authentication failed' });
+    }
+  });
+
   // Authentication endpoint
   app.post('/api/auth', async (req, res) => {
     try {

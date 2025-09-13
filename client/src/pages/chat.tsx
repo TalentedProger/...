@@ -6,6 +6,7 @@ import LoadingScreen from '@/components/loading-screen';
 import PendingScreen from '@/components/pending-screen';
 import RejectedScreen from '@/components/rejected-screen';
 import ChatInterface from '@/components/chat-interface';
+import DevModeButton from '@/components/dev-mode-button';
 import { useToast } from '@/hooks/use-toast';
 
 interface User {
@@ -29,13 +30,14 @@ export default function ChatPage() {
   const [roomId, setRoomId] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const { toast } = useToast();
+  const [devMode, setDevMode] = useState(false);
 
   // Initialize Telegram WebApp
   useEffect(() => {
     initializeTelegramWebApp();
   }, []);
 
-  // Authentication query
+  // Authentication query - skip when dev mode is active
   const { data: authData, refetch: refetchAuth, isLoading: authLoading } = useQuery({
     queryKey: ['/api/auth'],
     queryFn: async () => {
@@ -58,7 +60,7 @@ export default function ChatPage() {
       return await response.json();
     },
     retry: 1,
-    enabled: true,
+    enabled: !devMode, // Skip auth query when dev mode is active
   });
 
   // Update user state when auth data changes
@@ -187,19 +189,39 @@ export default function ChatPage() {
     }
   };
 
+  // Dev mode handler for testing in browser
+  const handleDevAuth = async () => {
+    setDevMode(true);
+    setUserStatus('loading');
+    
+    try {
+      // Call dev auth endpoint to create/get test user
+      const response = await apiRequest('POST', '/api/auth/dev');
+      const data = await response.json();
+      
+      setUser(data.user);
+      setUserStatus(data.user.status);
+    } catch (error) {
+      console.error('Dev auth error:', error);
+      // Fallback to hardcoded user for emergency testing
+      setUser({ id: 999, anonName: 'DevUser' + Math.floor(Math.random() * 1000), status: 'approved' });
+      setUserStatus('approved');
+    }
+  };
+
   // Show loading screen
-  if (authLoading || userStatus === 'loading') {
-    return <LoadingScreen />;
+  if ((!devMode && authLoading) || userStatus === 'loading') {
+    return <LoadingScreen onDevAuth={handleDevAuth} />;
   }
 
   // Show pending screen
   if (userStatus === 'pending') {
-    return <PendingScreen onRefreshStatus={handleRefreshStatus} />;
+    return <PendingScreen onRefreshStatus={handleRefreshStatus} onDevAuth={handleDevAuth} />;
   }
 
   // Show rejected screen
   if (userStatus === 'rejected') {
-    return <RejectedScreen />;
+    return <RejectedScreen onDevAuth={handleDevAuth} />;
   }
 
   // Show chat interface for approved users
@@ -228,6 +250,9 @@ export default function ChatPage() {
           Попробовать снова
         </button>
       </div>
+      
+      {/* Dev Mode Button */}
+      <DevModeButton onDevAuth={handleDevAuth} />
     </div>
   );
 }

@@ -1,8 +1,11 @@
+import DevModeButton from './dev-mode-button';
+
 interface PendingScreenProps {
   onRefreshStatus: () => void;
+  onDevAuth?: () => void;
 }
 
-export default function PendingScreen({ onRefreshStatus }: PendingScreenProps) {
+export default function PendingScreen({ onRefreshStatus, onDevAuth }: PendingScreenProps) {
   return (
     <div className="fixed inset-0 bg-background z-40">
       <div className="h-full flex flex-col items-center justify-center px-6 text-center">
@@ -38,6 +41,9 @@ export default function PendingScreen({ onRefreshStatus }: PendingScreenProps) {
           Обновить статус
         </button>
       </div>
+      
+      {/* Dev Mode Button */}
+      {onDevAuth && <DevModeButton onDevAuth={onDevAuth} />}
     </div>
   );
 }

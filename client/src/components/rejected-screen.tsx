@@ -1,4 +1,10 @@
-export default function RejectedScreen() {
+import DevModeButton from './dev-mode-button';
+
+interface RejectedScreenProps {
+  onDevAuth?: () => void;
+}
+
+export default function RejectedScreen({ onDevAuth }: RejectedScreenProps) {
   return (
     <div className="fixed inset-0 bg-background z-40">
       <div className="h-full flex flex-col items-center justify-center px-6 text-center">
@@ -27,6 +33,9 @@ export default function RejectedScreen() {
           Связаться с поддержкой
         </button>
       </div>
+      
+      {/* Dev Mode Button */}
+      {onDevAuth && <DevModeButton onDevAuth={onDevAuth} />}
     </div>
   );
 }
