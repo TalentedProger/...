@@ -60,7 +60,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { initData } = req.body;
       
+      console.log('[DEBUG] Auth request received:', {
+        hasInitData: !!initData,
+        initDataLength: initData?.length || 0,
+        initDataPreview: initData?.substring(0, 50) + '...'
+      });
+      
       if (!initData) {
+        console.log('[DEBUG] No initData provided');
         return res.status(400).json({ error: 'initData required' });
       }
 

@@ -40,7 +40,17 @@ export default function ChatPage() {
     queryKey: ['/api/auth'],
     queryFn: async () => {
       const initData = getInitData();
+      
+      console.log('[DEBUG] Frontend auth attempt:', {
+        hasInitData: !!initData,
+        initDataLength: initData?.length || 0,
+        initDataPreview: initData?.substring(0, 50) + '...',
+        isTelegramWebApp: !!window.Telegram?.WebApp,
+        windowLocation: window.location.href
+      });
+      
       if (!initData) {
+        console.error('[DEBUG] No Telegram init data available');
         throw new Error('No Telegram init data available');
       }
 
