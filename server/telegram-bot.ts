@@ -4,10 +4,30 @@ import crypto from 'crypto';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || '';
 const ADMIN_USER_ID = process.env.TELEGRAM_ADMIN_ID || process.env.ADMIN_ID || '';
-const WEBAPP_URL = process.env.WEBAPP_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'http://localhost:5000';
+
+// Properly construct webapp URL without double protocol
+function getWebAppUrl(): string {
+  let url = process.env.WEBAPP_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'localhost:5000';
+  
+  // Remove any existing protocol to avoid double prefixing
+  url = url.replace(/^https?:\/\//, '');
+  
+  // Add https protocol (required for Telegram Mini Apps)
+  return `https://${url}`;
+}
+
+const WEBAPP_URL = getWebAppUrl();
 
 if (!BOT_TOKEN) {
   throw new Error('TELEGRAM_BOT_TOKEN is required');
+}
+
+// Validate webapp URL format
+try {
+  new URL(WEBAPP_URL);
+  console.log(`[Telegram Bot] Using webapp URL: ${WEBAPP_URL}`);
+} catch (error) {
+  throw new Error(`Invalid WEBAPP_URL format: ${WEBAPP_URL}`);
 }
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -40,7 +60,7 @@ bot.onText(/\/start/, async (msg) => {
       });
     }
 
-    const webappUrl = `https://${WEBAPP_URL}`;
+    const webappUrl = WEBAPP_URL;
     
     const keyboard = {
       inline_keyboard: [[

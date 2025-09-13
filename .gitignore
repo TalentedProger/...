@@ -4,3 +4,8 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Security: Prevent token files from being committed
+approved_tokens.json
+*.tokens.json
+auth_tokens.*

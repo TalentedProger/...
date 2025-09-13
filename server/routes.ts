@@ -59,29 +59,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Development-only auth endpoint for testing
   app.post('/api/auth/dev', async (req, res) => {
-    // Only allow in development mode
+    // CRITICAL SECURITY: Multiple layers of production protection
+    
+    // Primary check: NODE_ENV must not be production
     if (process.env.NODE_ENV === 'production') {
+      console.warn(`[SECURITY] Dev endpoint access attempt blocked in production from IP: ${req.ip}`);
       return res.status(403).json({ error: 'Dev endpoint not available in production' });
     }
 
+    // Secondary check: Explicitly require DEV_MODE flag
+    if (process.env.DEV_MODE !== 'true') {
+      console.warn(`[SECURITY] Dev endpoint access blocked - DEV_MODE not enabled from IP: ${req.ip}`);
+      return res.status(403).json({ error: 'Dev endpoint disabled' });
+    }
+
+    // Tertiary check: Block if JWT_SECRET is production-grade (longer than dev fallback)
+    const jwtSecret = process.env.JWT_SECRET;
+    if (jwtSecret && jwtSecret.length > 50) {
+      console.warn(`[SECURITY] Dev endpoint blocked - production JWT detected from IP: ${req.ip}`);
+      return res.status(403).json({ error: 'Dev endpoint not available with production secrets' });
+    }
+
     try {
-      // Generate or get a test user
-      let user = await storage.getUserByTgId(BigInt(999999));
+      // Allow specifying tgId for testing different users
+      const { tgId } = req.body;
+      const targetTgId = tgId ? BigInt(tgId) : BigInt(999999);
+      
+      // Get the specified user
+      let user = await storage.getUserByTgId(targetTgId);
       
       if (!user) {
         user = await storage.createUser({
-          tgId: BigInt(999999),
+          tgId: targetTgId,
           username: null,
           anonName: generateAnonName(),
-          status: 'approved',
+          status: targetTgId === BigInt(999999) ? 'approved' : 'pending',
         });
-      } else if (user.status !== 'approved') {
-        // Ensure dev user is always approved
-        user = await storage.updateUserStatus(user.id, 'approved');
       }
 
       const token = generateAuthToken(user);
       const refreshToken = generateRefreshToken(user);
+
+      console.log(`[DEV AUTH] Authenticated as user ${user.id} (${user.anonName}) with status: ${user.status}`);
 
       res.json({
         user: {
