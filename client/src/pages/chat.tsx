@@ -1,0 +1,223 @@
+import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
+import { getInitData, initializeTelegramWebApp } from '@/lib/telegram';
+import LoadingScreen from '@/components/loading-screen';
+import PendingScreen from '@/components/pending-screen';
+import RejectedScreen from '@/components/rejected-screen';
+import ChatInterface from '@/components/chat-interface';
+import { useToast } from '@/hooks/use-toast';
+
+interface User {
+  id: number;
+  anonName: string;
+  status: string;
+}
+
+interface Message {
+  id: number;
+  content: string;
+  createdAt: string;
+  user: User | null;
+}
+
+export default function ChatPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [userStatus, setUserStatus] = useState<string>('loading');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [roomId, setRoomId] = useState<number | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const { toast } = useToast();
+
+  // Initialize Telegram WebApp
+  useEffect(() => {
+    initializeTelegramWebApp();
+  }, []);
+
+  // Authentication query
+  const { data: authData, refetch: refetchAuth, isLoading: authLoading } = useQuery({
+    queryKey: ['/api/auth'],
+    queryFn: async () => {
+      const initData = getInitData();
+      if (!initData) {
+        throw new Error('No Telegram init data available');
+      }
+
+      const response = await apiRequest('POST', '/api/auth', { initData });
+      return await response.json();
+    },
+    retry: 1,
+    enabled: true,
+  });
+
+  // Update user state when auth data changes
+  useEffect(() => {
+    if (authData) {
+      setUser(authData.user);
+      setUserStatus(authData.status);
+    }
+  }, [authData]);
+
+  // WebSocket connection
+  useEffect(() => {
+    if (user && user.status === 'approved') {
+      connectWebSocket();
+    }
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [user]);
+
+  const connectWebSocket = () => {
+    if (!user) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      setIsConnected(true);
+      
+      // Authenticate with WebSocket
+      ws.send(JSON.stringify({
+        type: 'auth',
+        userId: user.id
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        switch (data.type) {
+          case 'auth_success':
+            setRoomId(data.roomId);
+            break;
+            
+          case 'auth_error':
+            console.error('WebSocket auth error:', data.message);
+            toast({
+              variant: "destructive",
+              title: "Ошибка подключения",
+              description: data.message
+            });
+            break;
+            
+          case 'chat_history':
+            setMessages(data.messages || []);
+            break;
+            
+          case 'new_message':
+            setMessages(prev => [...prev, data.message]);
+            break;
+            
+          case 'error':
+            toast({
+              variant: "destructive",
+              title: "Ошибка",
+              description: data.message
+            });
+            break;
+            
+          default:
+            console.log('Unknown WebSocket message type:', data.type);
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      setIsConnected(false);
+      
+      // Reconnect after delay
+      setTimeout(() => {
+        if (user && user.status === 'approved') {
+          connectWebSocket();
+        }
+      }, 3000);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setIsConnected(false);
+    };
+  };
+
+  const handleSendMessage = (content: string) => {
+    if (wsRef.current && isConnected) {
+      wsRef.current.send(JSON.stringify({
+        type: 'send_message',
+        content,
+        roomId
+      }));
+    }
+  };
+
+  const handleRefreshStatus = async () => {
+    setUserStatus('loading');
+    try {
+      await refetchAuth();
+    } catch (error) {
+      console.error('Error refreshing status:', error);
+      setUserStatus(authData?.status || 'pending');
+      toast({
+        variant: "destructive",
+        title: "Ошибка",
+        description: "Не удалось обновить статус"
+      });
+    }
+  };
+
+  // Show loading screen
+  if (authLoading || userStatus === 'loading') {
+    return <LoadingScreen />;
+  }
+
+  // Show pending screen
+  if (userStatus === 'pending') {
+    return <PendingScreen onRefreshStatus={handleRefreshStatus} />;
+  }
+
+  // Show rejected screen
+  if (userStatus === 'rejected') {
+    return <RejectedScreen />;
+  }
+
+  // Show chat interface for approved users
+  if (userStatus === 'approved' && user) {
+    return (
+      <ChatInterface
+        user={user}
+        messages={messages}
+        onSendMessage={handleSendMessage}
+        isConnected={isConnected}
+        onlineCount={messages.length > 0 ? Math.floor(Math.random() * 20) + 5 : 0}
+      />
+    );
+  }
+
+  // Fallback error state
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-center">
+        <h2 className="text-xl font-semibold mb-2">Ошибка загрузки</h2>
+        <p className="text-muted-foreground mb-4">Не удалось загрузить приложение</p>
+        <button 
+          onClick={handleRefreshStatus}
+          className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
+        >
+          Попробовать снова
+        </button>
+      </div>
+    </div>
+  );
+}

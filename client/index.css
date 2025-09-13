@@ -1,0 +1,150 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(220, 14%, 96%);
+  --foreground: hsl(220, 9%, 9%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(220, 9%, 9%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(220, 9%, 9%);
+  --primary: hsl(199, 98%, 40%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(220, 14%, 94%);
+  --secondary-foreground: hsl(220, 9%, 9%);
+  --muted: hsl(220, 14%, 94%);
+  --muted-foreground: hsl(220, 9%, 46%);
+  --accent: hsl(199, 98%, 48%);
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(220, 13%, 91%);
+  --input: hsl(220, 13%, 91%);
+  --ring: hsl(199, 98%, 40%);
+  --chart-1: hsl(199, 98%, 40%);
+  --chart-2: hsl(120, 61%, 50%);
+  --chart-3: hsl(45, 93%, 47%);
+  --chart-4: hsl(147, 79%, 42%);
+  --chart-5: hsl(342, 75%, 51%);
+  --sidebar: hsl(0, 0%, 100%);
+  --sidebar-foreground: hsl(220, 9%, 9%);
+  --sidebar-primary: hsl(199, 98%, 40%);
+  --sidebar-primary-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent: hsl(199, 98%, 48%);
+  --sidebar-accent-foreground: hsl(0, 0%, 100%);
+  --sidebar-border: hsl(220, 13%, 91%);
+  --sidebar-ring: hsl(199, 98%, 40%);
+  --font-sans: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Roboto, Arial, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Menlo, monospace;
+  --radius: 8px;
+  --pending: hsl(45, 93%, 47%);
+  --success: hsl(120, 61%, 50%);
+  --warning: hsl(38, 92%, 50%);
+  --telegram: hsl(199, 98%, 40%);
+  --telegram-light: hsl(199, 98%, 48%);
+}
+
+.dark {
+  --background: hsl(220, 14%, 4%);
+  --foreground: hsl(220, 9%, 91%);
+  --card: hsl(220, 14%, 8%);
+  --card-foreground: hsl(220, 9%, 91%);
+  --popover: hsl(220, 14%, 4%);
+  --popover-foreground: hsl(220, 9%, 91%);
+  --primary: hsl(199, 98%, 40%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(220, 14%, 12%);
+  --secondary-foreground: hsl(220, 9%, 91%);
+  --muted: hsl(220, 14%, 12%);
+  --muted-foreground: hsl(220, 9%, 54%);
+  --accent: hsl(199, 98%, 48%);
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(220, 13%, 18%);
+  --input: hsl(220, 13%, 18%);
+  --ring: hsl(199, 98%, 40%);
+  --chart-1: hsl(199, 98%, 40%);
+  --chart-2: hsl(120, 61%, 50%);
+  --chart-3: hsl(45, 93%, 47%);
+  --chart-4: hsl(147, 79%, 42%);
+  --chart-5: hsl(342, 75%, 51%);
+  --sidebar: hsl(220, 14%, 8%);
+  --sidebar-foreground: hsl(220, 9%, 91%);
+  --sidebar-primary: hsl(199, 98%, 40%);
+  --sidebar-primary-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent: hsl(199, 98%, 48%);
+  --sidebar-accent-foreground: hsl(0, 0%, 100%);
+  --sidebar-border: hsl(220, 13%, 18%);
+  --sidebar-ring: hsl(199, 98%, 40%);
+  --pending: hsl(45, 93%, 47%);
+  --success: hsl(120, 61%, 50%);
+  --warning: hsl(38, 92%, 50%);
+  --telegram: hsl(199, 98%, 40%);
+  --telegram-light: hsl(199, 98%, 48%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+
+  html, body, #root {
+    height: 100%;
+  }
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+@keyframes slideUp {
+  from { 
+    transform: translateY(100%); 
+  }
+  to { 
+    transform: translateY(0); 
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse 3s infinite;
+}
+
+.animate-bounce-gentle {
+  animation: bounce 2s infinite;
+}
