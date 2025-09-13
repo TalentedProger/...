@@ -143,7 +143,7 @@ export default function ChatInterface({
             
             return (
               <div 
-                key={message.id}
+                key={`${message.id}-${message.createdAt}`}
                 className={`flex items-start space-x-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}
                 data-testid={`message-${message.id}`}
               >

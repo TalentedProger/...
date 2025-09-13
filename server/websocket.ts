@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import { storage } from './storage';
 import { insertMessageSchema } from '@shared/schema';
+import { verifyAuthToken } from './auth';
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: number;
@@ -53,35 +54,67 @@ export function setupWebSocket(server: Server) {
 
   async function handleAuth(ws: AuthenticatedWebSocket, message: any) {
     try {
-      const { userId } = message;
+      const { token } = message;
       
-      if (!userId) {
+      console.log(`[WebSocket] Auth attempt from client`);
+      
+      if (!token) {
+        console.log(`[WebSocket] Auth failed: No token provided`);
         ws.send(JSON.stringify({
           type: 'auth_error',
-          message: 'User ID required'
+          message: 'Authentication token required',
+          code: 'NO_TOKEN'
         }));
+        ws.close(1008, 'Authentication required');
         return;
       }
 
-      const user = await storage.getUserById(userId);
+      // Verify the JWT token
+      const tokenData = verifyAuthToken(token);
+      if (!tokenData) {
+        console.log(`[WebSocket] Auth failed: Token verification failed`);
+        ws.send(JSON.stringify({
+          type: 'auth_error',
+          message: 'Invalid or expired authentication token',
+          code: 'INVALID_TOKEN'
+        }));
+        ws.close(1008, 'Invalid token');
+        return;
+      }
+
+      // Verify user still exists and has the same status
+      const user = await storage.getUserById(tokenData.userId);
       if (!user) {
         ws.send(JSON.stringify({
           type: 'auth_error',
           message: 'User not found'
         }));
+        ws.close(1008, 'User not found');
         return;
       }
 
-      ws.userId = user.id;
-      ws.userStatus = user.status;
+      // Check if user status matches token (prevent using old tokens after status change)
+      if (user.status !== tokenData.status) {
+        ws.send(JSON.stringify({
+          type: 'auth_error',
+          message: 'User status has changed. Please re-authenticate'
+        }));
+        ws.close(1008, 'Status changed');
+        return;
+      }
 
       if (user.status !== 'approved') {
         ws.send(JSON.stringify({
           type: 'auth_error',
           message: 'User not approved for chat'
         }));
+        ws.close(1008, 'Not approved');
         return;
       }
+
+      // Authentication successful
+      ws.userId = user.id;
+      ws.userStatus = user.status;
 
       // Load chat history
       const globalRoom = await storage.getOrCreateGlobalRoom();
@@ -116,6 +149,7 @@ export function setupWebSocket(server: Server) {
         type: 'auth_error',
         message: 'Authentication failed'
       }));
+      ws.close(1011, 'Authentication error');
     }
   }
 
@@ -131,19 +165,45 @@ export function setupWebSocket(server: Server) {
 
       const { content, roomId } = message;
       
-      if (!content?.trim()) {
+      // Validate message using insertMessageSchema
+      const globalRoom = await storage.getOrCreateGlobalRoom();
+      const targetRoomId = roomId || globalRoom.id;
+
+      const messageData = {
+        content: content,
+        userId: ws.userId,
+        roomId: targetRoomId
+      };
+
+      const validation = insertMessageSchema.safeParse(messageData);
+      if (!validation.success) {
         ws.send(JSON.stringify({
           type: 'error',
-          message: 'Message content required'
+          message: `Invalid message: ${validation.error.issues.map(i => i.message).join(', ')}`
         }));
         return;
       }
 
-      const globalRoom = await storage.getOrCreateGlobalRoom();
-      const targetRoomId = roomId || globalRoom.id;
+      // Additional content validation
+      const trimmedContent = content?.trim();
+      if (!trimmedContent || trimmedContent.length === 0) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Message content cannot be empty'
+        }));
+        return;
+      }
+
+      if (trimmedContent.length > 1000) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Message is too long (max 1000 characters)'
+        }));
+        return;
+      }
 
       const newMessage = await storage.createMessage({
-        content: content.trim(),
+        content: trimmedContent,
         userId: ws.userId,
         roomId: targetRoomId
       });
@@ -178,6 +238,12 @@ export function setupWebSocket(server: Server) {
         type: 'error',
         message: 'Failed to send message'
       }));
+      
+      // Close connection on repeated errors (security measure)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('ECONNRESET') || errorMessage.includes('Invalid')) {
+        ws.close(1011, 'Message error');
+      }
     }
   }
 

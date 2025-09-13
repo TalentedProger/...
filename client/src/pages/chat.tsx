@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { getInitData, initializeTelegramWebApp } from '@/lib/telegram';
+import { useAuth } from '@/lib/auth';
 import LoadingScreen from '@/components/loading-screen';
 import PendingScreen from '@/components/pending-screen';
 import RejectedScreen from '@/components/rejected-screen';
@@ -23,8 +24,7 @@ interface Message {
 }
 
 export default function ChatPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [userStatus, setUserStatus] = useState<string>('loading');
+  const auth = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [roomId, setRoomId] = useState<number | null>(null);
@@ -37,7 +37,7 @@ export default function ChatPage() {
     initializeTelegramWebApp();
   }, []);
 
-  // Authentication query - skip when dev mode is active
+  // Authentication query - skip when dev mode is active or already authenticated
   const { data: authData, refetch: refetchAuth, isLoading: authLoading } = useQuery({
     queryKey: ['/api/auth'],
     queryFn: async () => {
@@ -60,20 +60,24 @@ export default function ChatPage() {
       return await response.json();
     },
     retry: 1,
-    enabled: !devMode, // Skip auth query when dev mode is active
+    enabled: !devMode && !auth.isAuthenticated(), // Skip if dev mode active or already authenticated
   });
 
-  // Update user state when auth data changes
+  // Update auth manager when auth data changes
   useEffect(() => {
     if (authData) {
-      setUser(authData.user);
-      setUserStatus(authData.status);
+      auth.setAuthData({
+        user: authData.user,
+        status: authData.status,
+        token: authData.token,
+        refreshToken: authData.refreshToken
+      });
     }
   }, [authData]);
 
   // WebSocket connection
   useEffect(() => {
-    if (user && user.status === 'approved') {
+    if (auth.user && auth.status === 'approved' && auth.token) {
       connectWebSocket();
     }
 
@@ -82,10 +86,16 @@ export default function ChatPage() {
         wsRef.current.close();
       }
     };
-  }, [user]);
+  }, [auth.user, auth.status, auth.token]);
 
-  const connectWebSocket = () => {
-    if (!user) return;
+  const connectWebSocket = async () => {
+    if (!auth.user || !auth.isAuthenticated()) return;
+
+    const token = await auth.getValidToken();
+    if (!token) {
+      console.error('No valid token available for WebSocket connection');
+      return;
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -97,10 +107,10 @@ export default function ChatPage() {
       console.log('WebSocket connected');
       setIsConnected(true);
       
-      // Authenticate with WebSocket
+      // Authenticate with WebSocket using JWT token
       ws.send(JSON.stringify({
         type: 'auth',
-        userId: user.id
+        token: token
       }));
     };
 
@@ -115,11 +125,7 @@ export default function ChatPage() {
             
           case 'auth_error':
             console.error('WebSocket auth error:', data.message);
-            toast({
-              variant: "destructive",
-              title: "Ошибка подключения",
-              description: data.message
-            });
+            handleAuthError(data.message);
             break;
             
           case 'chat_history':
@@ -150,9 +156,9 @@ export default function ChatPage() {
       console.log('WebSocket disconnected');
       setIsConnected(false);
       
-      // Reconnect after delay
+      // Reconnect after delay if still authenticated
       setTimeout(() => {
-        if (user && user.status === 'approved') {
+        if (auth.user && auth.status === 'approved' && auth.token) {
           connectWebSocket();
         }
       }, 3000);
@@ -162,6 +168,30 @@ export default function ChatPage() {
       console.error('WebSocket error:', error);
       setIsConnected(false);
     };
+  };
+
+  // Handle WebSocket auth error with token refresh
+  const handleAuthError = async (message: string) => {
+    console.log('WebSocket auth error:', message);
+    
+    // Attempt to refresh token
+    const refreshSucceeded = await auth.handleAuthError();
+    
+    if (refreshSucceeded) {
+      console.log('Token refreshed successfully, reconnecting WebSocket...');
+      // Close current connection and reconnect with new token
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      // Reconnect will happen in the onclose handler
+    } else {
+      // Token refresh failed, show error to user
+      toast({
+        variant: "destructive",
+        title: "Ошибка подключения",
+        description: "Токен истек. Требуется повторная аутентификация."
+      });
+    }
   };
 
   const handleSendMessage = (content: string) => {
@@ -175,12 +205,10 @@ export default function ChatPage() {
   };
 
   const handleRefreshStatus = async () => {
-    setUserStatus('loading');
     try {
       await refetchAuth();
     } catch (error) {
       console.error('Error refreshing status:', error);
-      setUserStatus(authData?.status || 'pending');
       toast({
         variant: "destructive",
         title: "Ошибка",
@@ -192,43 +220,54 @@ export default function ChatPage() {
   // Dev mode handler for testing in browser
   const handleDevAuth = async () => {
     setDevMode(true);
-    setUserStatus('loading');
     
     try {
       // Call dev auth endpoint to create/get test user
       const response = await apiRequest('POST', '/api/auth/dev');
       const data = await response.json();
       
-      setUser(data.user);
-      setUserStatus(data.user.status);
+      // Set auth data using auth manager
+      auth.setAuthData({
+        user: data.user,
+        status: data.user.status,
+        token: data.token,
+        refreshToken: data.refreshToken
+      });
     } catch (error) {
       console.error('Dev auth error:', error);
-      // Fallback to hardcoded user for emergency testing
-      setUser({ id: 999, anonName: 'DevUser' + Math.floor(Math.random() * 1000), status: 'approved' });
-      setUserStatus('approved');
+      toast({
+        variant: "destructive",
+        title: "Ошибка разработки",
+        description: "Не удалось выполнить аутентификацию в режиме разработки"
+      });
     }
   };
 
   // Show loading screen
-  if ((!devMode && authLoading) || userStatus === 'loading') {
+  if ((!devMode && authLoading) || auth.status === 'loading') {
     return <LoadingScreen onDevAuth={handleDevAuth} />;
   }
 
   // Show pending screen
-  if (userStatus === 'pending') {
+  if (auth.status === 'pending') {
     return <PendingScreen onRefreshStatus={handleRefreshStatus} onDevAuth={handleDevAuth} />;
   }
 
   // Show rejected screen
-  if (userStatus === 'rejected') {
+  if (auth.status === 'rejected') {
     return <RejectedScreen onDevAuth={handleDevAuth} />;
   }
 
+  // Show expired token screen
+  if (auth.status === 'expired') {
+    return <LoadingScreen onDevAuth={handleDevAuth} />;
+  }
+
   // Show chat interface for approved users
-  if (userStatus === 'approved' && user) {
+  if (auth.status === 'approved' && auth.user) {
     return (
       <ChatInterface
-        user={user}
+        user={auth.user}
         messages={messages}
         onSendMessage={handleSendMessage}
         isConnected={isConnected}

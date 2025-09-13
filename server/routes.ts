@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupWebSocket } from "./websocket";
 import { insertUserSchema } from "@shared/schema";
+import { generateAuthToken, generateRefreshToken, verifyRefreshToken } from "./auth";
 import crypto from 'crypto';
 import querystring from 'querystring';
 
@@ -44,6 +45,7 @@ function generateAnonName(): string {
   return `${prefix}${suffix}`;
 }
 
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
@@ -78,6 +80,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         user = await storage.updateUserStatus(user.id, 'approved');
       }
 
+      const token = generateAuthToken(user);
+      const refreshToken = generateRefreshToken(user);
+
       res.json({
         user: {
           id: user.id,
@@ -85,7 +90,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: user.status,
           createdAt: user.createdAt,
         },
-        status: user.status
+        status: user.status,
+        token,
+        refreshToken
       });
 
     } catch (error) {
@@ -150,6 +157,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const token = generateAuthToken(user);
+      const refreshToken = generateRefreshToken(user);
+
       res.json({
         user: {
           id: user.id,
@@ -157,12 +167,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: user.status,
           createdAt: user.createdAt,
         },
-        status: user.status
+        status: user.status,
+        token,
+        refreshToken
       });
 
     } catch (error) {
       console.error('Auth error:', error);
       res.status(500).json({ error: 'Authentication failed' });
+    }
+  });
+
+  // Token refresh endpoint
+  app.post('/api/auth/refresh', async (req, res) => {
+    try {
+      const { refreshToken } = req.body;
+      
+      if (!refreshToken) {
+        return res.status(400).json({ error: 'Refresh token required' });
+      }
+
+      // Verify the refresh token
+      const tokenData = verifyRefreshToken(refreshToken);
+      if (!tokenData) {
+        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+      }
+
+      // Get current user data to ensure still valid
+      const user = await storage.getUserById(tokenData.userId);
+      if (!user) {
+        return res.status(401).json({ error: 'User not found' });
+      }
+
+      // Check if user status matches token (prevent using old tokens after status change)
+      if (user.status !== tokenData.status) {
+        return res.status(401).json({ error: 'User status has changed. Please re-authenticate' });
+      }
+
+      // Generate new tokens
+      const newToken = generateAuthToken(user);
+      const newRefreshToken = generateRefreshToken(user);
+
+      res.json({
+        user: {
+          id: user.id,
+          anonName: user.anonName,
+          status: user.status,
+          createdAt: user.createdAt,
+        },
+        status: user.status,
+        token: newToken,
+        refreshToken: newRefreshToken
+      });
+
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      res.status(500).json({ error: 'Token refresh failed' });
     }
   });
 
